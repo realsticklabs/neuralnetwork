@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neural Network Word Generator</title>
+  <style>
+    canvas {
+      border: 1px solid black;
+      margin-top: 20px;
+    }
+    #output {
+      font-size: 1.5em;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Neural Network Word Generator</h1>
+  <button onclick="trainNetwork()">Train Network</button>
+  <div id="output">Output: </div>
+  <canvas id="visualization" width="400" height="200"></canvas>
+
+  <script>
+    // Neural network structure
+    class NeuralNetwork {
+      constructor(inputSize, hiddenSize, outputSize) {
+        this.inputSize = inputSize;
+        this.hiddenSize = hiddenSize;
+        this.outputSize = outputSize;
+        
+        // Randomly initialize weights
+        this.weightsInputHidden = Array.from({ length: inputSize }, () => 
+          Array.from({ length: hiddenSize }, () => Math.random() - 0.5)
+        );
+        this.weightsHiddenOutput = Array.from({ length: hiddenSize }, () => 
+          Array.from({ length: outputSize }, () => Math.random() - 0.5)
+        );
+      }
+
+      // Activation function (sigmoid)
+      sigmoid(x) {
+        return 1 / (1 + Math.exp(-x));
+      }
+
+      // Feedforward through the network
+      feedforward(input) {
+        // Input to hidden
+        const hidden = this.weightsInputHidden.map(row =>
+          row.reduce((sum, w, i) => sum + w * input[i], 0)
+        ).map(this.sigmoid);
+
+        // Hidden to output
+        const output = this.weightsHiddenOutput.map(row =>
+          row.reduce((sum, w, i) => sum + w * hidden[i], 0)
+        ).map(this.sigmoid);
+
+        return output;
+      }
+    }
+
+    // Example training data (simple encoding of letters A, B, C)
+    const trainingData = [
+      { input: [1, 0, 0], output: [1, 0, 0] }, // "A"
+      { input: [0, 1, 0], output: [0, 1, 0] }, // "B"
+      { input: [0, 0, 1], output: [0, 0, 1] }  // "C"
+    ];
+
+    // Mapping output to letters
+    const letterMapping = ['A', 'B', 'C'];
+
+    // Create a neural network
+    const neuralNetwork = new NeuralNetwork(3, 5, 3);
+
+    // Training loop
+    function trainNetwork() {
+      const canvas = document.getElementById('visualization');
+      const ctx = canvas.getContext('2d');
+      
+      for (let epoch = 0; epoch < 1000; epoch++) {
+        trainingData.forEach(data => {
+          const output = neuralNetwork.feedforward(data.input);
+          const predictedLetter = letterMapping[output.indexOf(Math.max(...output))];
+
+          // Visualization - clear canvas and draw network
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          visualizeNetwork(ctx, neuralNetwork, data.input, output, predictedLetter, epoch);
+        });
+      }
+    }
+
+    // Visualization function
+    function visualizeNetwork(ctx, network, input, output, predictedLetter, epoch) {
+      // Draw input layer
+      input.forEach((value, index) => {
+        ctx.fillStyle = value === 1 ? 'green' : 'gray';
+        ctx.fillRect(20, 50 + index * 40, 20, 20);
+      });
+
+      // Draw hidden layer
+      network.weightsInputHidden.forEach((weights, i) => {
+        const sum = weights.reduce((acc, w, j) => acc + w * input[j], 0);
+        const activation = network.sigmoid(sum);
+        ctx.fillStyle = `rgba(0, 0, 255, ${activation})`;
+        ctx.fillRect(180, 50 + i * 40, 20, 20);
+      });
+
+      // Draw output layer
+      output.forEach((value, index) => {
+        ctx.fillStyle = `rgba(255, 0, 0, ${value})`;
+        ctx.fillRect(340, 50 + index * 40, 20, 20);
+      });
+
+      // Update output div
+      document.getElementById('output').innerText = `Epoch: ${epoch}, Predicted: ${predictedLetter}`;
+    }
+  </script>
+</body>
+</html>
