@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Neural Network Word Trainer</title>
+  <title>RNN Word Trainer</title>
   <style>
     #output {
       font-size: 1.5em;
@@ -13,30 +13,47 @@
       border: 1px solid black;
       margin-top: 20px;
     }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(27, 1fr);
+      grid-gap: 2px;
+      margin-top: 20px;
+    }
+    .cell {
+      width: 20px;
+      height: 20px;
+      background-color: #f0f0f0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      border: 1px solid #ccc;
+    }
   </style>
 </head>
 <body>
-  <h1>Neural Network Word Trainer</h1>
+  <h1>RNN Word Trainer</h1>
   <input type="text" id="inputText" placeholder="Type a word" />
   <button onclick="trainNetwork()">Train Network</button>
   <div id="output">Output: </div>
-  <canvas id="visualization" width="1000" height="100"></canvas>
+  
+  <div class="grid" id="visualization"></div>
 
   <script>
-    class NeuralNetwork {
+    class RNN {
       constructor(inputSize, hiddenSize, outputSize) {
         this.inputSize = inputSize;
         this.hiddenSize = hiddenSize;
         this.outputSize = outputSize;
-
-        // Initialize weights with random values
-        this.weightsInputHidden = Array.from({ length: inputSize }, () =>
-          Array.from({ length: hiddenSize }, () => Math.random() - 0.5)
-        );
-        this.weightsHiddenOutput = Array.from({ length: hiddenSize }, () =>
-          Array.from({ length: outputSize }, () => Math.random() - 0.5)
-        );
         this.learningRate = 0.1;
+
+        this.weightsInputHidden = this.initializeWeights(inputSize, hiddenSize);
+        this.weightsHiddenOutput = this.initializeWeights(hiddenSize, outputSize);
+        this.hiddenState = Array(hiddenSize).fill(0);
+      }
+
+      initializeWeights(rows, cols) {
+        return Array.from({ length: rows }, () => Array.from({ length: cols }, () => Math.random() - 0.5));
       }
 
       sigmoid(x) {
@@ -48,15 +65,18 @@
       }
 
       feedforward(input) {
-        this.hiddenLayer = this.weightsInputHidden.map(row =>
-          row.reduce((sum, w, i) => sum + w * input[i], 0)
-        ).map(this.sigmoid);
+        // Compute hidden state
+        this.hiddenState = this.hiddenState.map((h, i) =>
+          this.sigmoid(input.reduce((sum, inp, j) => sum + inp * this.weightsInputHidden[j][i], 0) +
+            this.hiddenState.reduce((sum, hPrev, j) => sum + hPrev * this.weightsHiddenOutput[j][i], 0))
+        );
 
-        this.outputLayer = this.weightsHiddenOutput.map(row =>
-          row.reduce((sum, w, i) => sum + w * this.hiddenLayer[i], 0)
-        ).map(this.sigmoid);
+        // Compute output
+        const output = this.hiddenState.map((h, i) =>
+          this.sigmoid(this.hiddenState.reduce((sum, h, j) => sum + h * this.weightsHiddenOutput[j][i], 0))
+        );
 
-        return this.outputLayer;
+        return output;
       }
 
       train(input, target) {
@@ -64,27 +84,30 @@
         const outputError = target.map((t, i) => t - output[i]);
         const outputDelta = outputError.map((err, i) => err * this.sigmoidDerivative(output[i]));
 
+        // Update weights between hidden and output
+        this.weightsHiddenOutput = this.weightsHiddenOutput.map((row, i) =>
+          row.map((w, j) => w + this.learningRate * outputDelta[j] * this.hiddenState[i])
+        );
+
+        // Update hidden state (reverse propagation)
         const hiddenError = this.weightsHiddenOutput[0].map((_, i) =>
           outputDelta.reduce((sum, delta, j) => sum + delta * this.weightsHiddenOutput[j][i], 0)
         );
-        const hiddenDelta = hiddenError.map((err, i) => err * this.sigmoidDerivative(this.hiddenLayer[i]));
 
-        this.weightsHiddenOutput = this.weightsHiddenOutput.map((row, i) =>
-          row.map((w, j) => w + this.learningRate * outputDelta[j] * this.hiddenLayer[i])
-        );
-
-        this.weightsInputHidden = this.weightsInputHidden.map((row, i) =>
-          row.map((w, j) => w + this.learningRate * hiddenDelta[j] * input[i])
+        this.hiddenState = this.hiddenState.map((h, i) =>
+          h + this.learningRate * hiddenError[i]
         );
       }
     }
 
-    const neuralNetwork = new NeuralNetwork(26, 10, 26);
+    const rnn = new RNN(27, 50, 27);
 
     function letterToArray(letter) {
-      const index = letter.charCodeAt(0) - 65;
-      const arr = new Array(26).fill(0);
-      if (index >= 0 && index < 26) arr[index] = 1;
+      const arr = new Array(27).fill(0);
+      if (letter) {
+        const index = letter.charCodeAt(0) - 65; // A-Z
+        if (index >= 0 && index < 26) arr[index] = 1; // A-Z
+      }
       return arr;
     }
 
@@ -95,46 +118,52 @@
 
     function trainNetwork() {
       const inputText = document.getElementById('inputText').value.toUpperCase();
-      const canvas = document.getElementById('visualization');
-      const ctx = canvas.getContext('2d');
+      const visualization = document.getElementById('visualization');
       const epochs = 1000;
 
-      // Train the network on each letter of the input text
+      visualization.innerHTML = ''; // Clear previous visualization
+
       for (let epoch = 0; epoch < epochs; epoch++) {
         for (let i = 0; i < inputText.length; i++) {
           const input = letterToArray(inputText[i]);
           const target = letterToArray(inputText[i]);
-          neuralNetwork.train(input, target);
+          rnn.train(input, target);
         }
 
-        // Every epoch, generate the word and write it to the canvas
+        // Generate the output after each epoch
         const generatedWord = inputText.split('').map(letter => {
           const input = letterToArray(letter);
-          const output = neuralNetwork.feedforward(input);
+          const output = rnn.feedforward(input);
           return arrayToLetter(output);
         }).join('');
 
-        visualizeNetworkProgress(ctx, generatedWord, epoch);
+        visualizeNetwork(visualization, generatedWord, epoch);
       }
 
-      // Final output
       const finalGeneratedWord = inputText.split('').map(letter => {
         const input = letterToArray(letter);
-        const output = neuralNetwork.feedforward(input);
+        const output = rnn.feedforward(input);
         return arrayToLetter(output);
       }).join('');
       document.getElementById('output').innerText = `Final Output: ${finalGeneratedWord}`;
     }
 
-    function visualizeNetworkProgress(ctx, generatedWord, epoch) {
-      const x = epoch % ctx.canvas.width;
-      const y = Math.floor(epoch / ctx.canvas.width) * 20 + 20;
+    function visualizeNetwork(visualization, generatedWord, epoch) {
+      const cells = visualization.children.length;
+      if (cells >= 729) return; // Limit to 729 cells (27*27)
 
-      if (y > ctx.canvas.height - 20) return;
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.innerText = generatedWord;
 
-      ctx.clearRect(x, y - 20, ctx.canvas.width, 20);  // Clear previous word at this position
-      ctx.font = '16px Arial';
-      ctx.fillText(generatedWord, x, y);  // Draw word at the pixel position of this epoch
+      visualization.appendChild(cell);
+
+      // Fill the grid to a 27x27 layout
+      if (cells % 27 === 0) {
+        const row = document.createElement('div');
+        row.className = 'grid';
+        visualization.appendChild(row);
+      }
     }
   </script>
 </body>
